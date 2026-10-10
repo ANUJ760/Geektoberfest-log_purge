@@ -79,6 +79,7 @@ src/log_purge/cli.py      argument parsing, prompt, output, exit codes
 src/log_purge/purger.py   find_old_files() and delete_files() (no I/O formatting)
 src/log_purge/utils.py    size formatting and age helpers
 tests/                    pytest suites for core logic and CLI
+
 ```
 
 ## License
