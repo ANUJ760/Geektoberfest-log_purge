@@ -8,6 +8,7 @@ All notable changes are documented here. Format based on
 
 ### Added
 - `--quiet` (`-q`) flag to suppress all output except errors for cron and automated scripts (#5).
+- `--log-file` option to append timestamped audit records of deleted files and dry runs (#7).
 
 ## [0.1.0] - 2026-10-04
 

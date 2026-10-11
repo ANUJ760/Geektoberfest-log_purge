@@ -16,6 +16,8 @@ from pathlib import Path
 from .utils import SECONDS_PER_DAY
 
 log = logging.getLogger(__name__)
+audit_log = logging.getLogger("log_purge.audit")
+audit_log.propagate = False
 
 
 @dataclass(frozen=True)
@@ -92,9 +94,11 @@ def delete_files(candidates: list[Candidate]) -> PurgeResult:
             c.path.unlink()
         except OSError as exc:
             log.error("Failed to delete %s: %s", c.path, exc.strerror)
+            audit_log.error("FAILED %s %s", c.path, exc.strerror)
             result.failures.append((c.path, exc))
         else:
             result.deleted += 1
             result.freed_bytes += c.size
             log.debug("Deleted %s", c.path)
+            audit_log.info("DELETED %s %d bytes", c.path, c.size)
     return result

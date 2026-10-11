@@ -107,3 +107,63 @@ def test_quiet_mode_deletion_failures_printed_to_stderr(tmp_path, capsys, monkey
     assert "could not be deleted" in captured.err
 
 
+def test_log_file_records_deletions(tmp_path):
+    import re
+
+    f1 = make_old(tmp_path / "a.log")
+    f2 = make_old(tmp_path / "b.log")
+    log_file = tmp_path / "audit.log"
+
+    assert cli.main([str(tmp_path), "-d", "30", "--yes", "--log-file", str(log_file)]) == 0
+    assert not f1.exists()
+    assert not f2.exists()
+    assert log_file.exists()
+
+    content = log_file.read_text()
+    lines = content.strip().splitlines()
+    assert len(lines) == 3
+
+    iso_regex = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z "
+    assert re.search(iso_regex + r"DELETED .*a\.log \d+ bytes", lines[0])
+    assert re.search(iso_regex + r"DELETED .*b\.log \d+ bytes", lines[1])
+    assert re.search(iso_regex + r"SUMMARY Deleted 2 file\(s\), freed \d+ bytes", lines[2])
+
+
+def test_log_file_appends_across_runs(tmp_path):
+    log_file = tmp_path / "audit.log"
+
+    make_old(tmp_path / "a.log")
+    assert cli.main([str(tmp_path), "-d", "30", "--yes", "--log-file", str(log_file)]) == 0
+
+    make_old(tmp_path / "b.log")
+    assert cli.main([str(tmp_path), "-d", "30", "--yes", "--log-file", str(log_file)]) == 0
+
+    content = log_file.read_text()
+    assert "DELETED " in content
+    assert content.count("SUMMARY") == 2
+    assert "a.log" in content
+    assert "b.log" in content
+
+
+def test_log_file_dry_run_records_would_delete(tmp_path):
+    f = make_old(tmp_path / "a.log")
+    log_file = tmp_path / "audit.log"
+
+    assert cli.main([str(tmp_path), "-d", "30", "--dry-run", "--log-file", str(log_file)]) == 0
+    assert f.exists()
+    content = log_file.read_text()
+    assert "WOULD_DELETE " in content
+    assert "a.log" in content
+    assert "[dry-run]" in content
+
+
+def test_unwritable_log_path_fails_safely(tmp_path, capsys):
+    f = make_old(tmp_path / "a.log")
+    dir_as_file = tmp_path / "dir_log"
+    dir_as_file.mkdir()
+
+    assert cli.main([str(tmp_path), "-d", "30", "--yes", "--log-file", str(dir_as_file)]) == 2
+    assert f.exists()  # Nothing deleted!
+    captured = capsys.readouterr()
+    assert "error: cannot write to log file" in captured.err
+

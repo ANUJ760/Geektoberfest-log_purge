@@ -29,14 +29,15 @@ log-purge /logs --days 30
 # Cron / scripts: skip the prompt
 log-purge /logs --days 30 --yes
 
-# Only *.log files, top-level directory only
-log-purge /logs -d 14 -p "*.log" --no-recursive --yes
+# Record every deletion to an audit log file
+log-purge /logs -d 30 --yes --log-file /var/log/log-purge.log
 ```
 
 | Option | Meaning |
 |---|---|
 | `-d, --days N` | Delete files older than N days (required) |
 | `-p, --pattern GLOB` | Match file names, default `*` |
+| `--log-file FILE` | Append timestamped deletion audit trail to file |
 | `--no-recursive` | Don't descend into subdirectories |
 | `-n, --dry-run` | List what would be deleted, delete nothing |
 | `-y, --yes` | Skip the confirmation prompt |

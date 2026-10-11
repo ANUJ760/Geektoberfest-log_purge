@@ -13,11 +13,24 @@ import argparse
 import logging
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from . import __version__
-from .purger import PurgeResult, delete_files, find_old_files
+from .purger import PurgeResult, audit_log, delete_files, find_old_files
 from .utils import age_in_days, format_size
+
+
+class AuditFormatter(logging.Formatter):
+    """Format audit log records with UTC ISO 8601 timestamp ending in Z."""
+
+    def formatTime(self, record: logging.LogRecord, datefmt: str | None = None) -> str:
+        dt = datetime.fromtimestamp(record.created, tz=timezone.utc)
+        return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def format(self, record: logging.LogRecord) -> str:
+        timestamp = self.formatTime(record)
+        return f"{timestamp} {record.getMessage()}"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -32,6 +45,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="glob matched against file names (default: *)")
     p.add_argument("--no-recursive", action="store_true",
                    help="only look at the top-level directory")
+    p.add_argument("--log-file", type=Path, default=None,
+                   help="record every deletion to a log file")
     p.add_argument("-n", "--dry-run", action="store_true",
                    help="list what would be deleted, delete nothing")
     p.add_argument("-y", "--yes", action="store_true",
@@ -64,63 +79,98 @@ def main(argv: list[str] | None = None) -> int:
         force=True,
     )
 
-    if args.days < 0:
-        print("error: --days must be >= 0", file=sys.stderr)
-        return 2
-    directory = args.directory.resolve()
-    if not directory.is_dir():
-        print(f"error: not a directory: {directory}", file=sys.stderr)
-        return 2
-    if directory == Path(directory.anchor):
-        print("error: refusing to purge a filesystem root", file=sys.stderr)
-        return 2
+    handler: logging.FileHandler | None = None
+    if args.log_file is not None:
+        try:
+            log_file = args.log_file.resolve()
+            log_file.parent.mkdir(parents=True, exist_ok=True)
+            handler = logging.FileHandler(log_file, mode="a", encoding="utf-8")
+            handler.setFormatter(AuditFormatter())
+            audit_log.addHandler(handler)
+            audit_log.setLevel(logging.INFO)
+        except OSError as exc:
+            print(f"error: cannot write to log file {args.log_file}: {exc.strerror or exc}",
+                  file=sys.stderr)
+            return 2
 
     try:
-        now = time.time()
-        candidates = find_old_files(
-            directory, args.days, args.pattern,
-            recursive=not args.no_recursive, now=now,
-        )
-        if not candidates:
-            if not args.quiet:
-                print(f"Nothing to delete: no files older than {args.days:g} day(s).")
-            return 0
+        if args.days < 0:
+            print("error: --days must be >= 0", file=sys.stderr)
+            return 2
+        directory = args.directory.resolve()
+        if not directory.is_dir():
+            print(f"error: not a directory: {directory}", file=sys.stderr)
+            return 2
+        if directory == Path(directory.anchor):
+            print("error: refusing to purge a filesystem root", file=sys.stderr)
+            return 2
 
-        total = sum(c.size for c in candidates)
-        if (args.verbose or args.dry_run) and not args.quiet:
-            for c in candidates:
-                print(f"  {c.path}  ({format_size(c.size)}, "
-                      f"{age_in_days(c.mtime, now):.0f} days old)")
-
-        if args.dry_run:
-            if not args.quiet:
-                print(f"[dry-run] Would delete {len(candidates)} file(s), "
-                      f"freeing {format_size(total)}.")
-            return 0
-
-        if not args.yes:
-            if not sys.stdin.isatty():
-                print("error: not a terminal; pass --yes to confirm deletion",
-                      file=sys.stderr)
-                return 2
-            if not _confirm(len(candidates), total, directory):
+        try:
+            now = time.time()
+            candidates = find_old_files(
+                directory, args.days, args.pattern,
+                recursive=not args.no_recursive, now=now,
+            )
+            if not candidates:
+                audit_log.info("SUMMARY Nothing to delete")
                 if not args.quiet:
-                    print("Aborted. Nothing was deleted.")
+                    print(f"Nothing to delete: no files older than {args.days:g} day(s).")
                 return 0
 
-        result: PurgeResult = delete_files(candidates)
-    except KeyboardInterrupt:
-        print("\nInterrupted.", file=sys.stderr)
-        return 130
+            total = sum(c.size for c in candidates)
+            if (args.verbose or args.dry_run) and not args.quiet:
+                for c in candidates:
+                    print(f"  {c.path}  ({format_size(c.size)}, "
+                          f"{age_in_days(c.mtime, now):.0f} days old)")
 
-    if not args.quiet:
-        print(f"Deleted {result.deleted} file(s), freed {format_size(result.freed_bytes)}.")
-    if result.failures:
-        print(f"{len(result.failures)} file(s) could not be deleted:", file=sys.stderr)
-        for path, exc in result.failures:
-            print(f"  {path}: {exc.strerror}", file=sys.stderr)
-        return 1
-    return 0
+            if args.dry_run:
+                for c in candidates:
+                    audit_log.info("WOULD_DELETE %s %d bytes", c.path, c.size)
+                audit_log.info(
+                    "SUMMARY [dry-run] Would delete %d file(s), freeing %d bytes",
+                    len(candidates),
+                    total,
+                )
+                if not args.quiet:
+                    print(f"[dry-run] Would delete {len(candidates)} file(s), "
+                          f"freeing {format_size(total)}.")
+                return 0
+
+            if not args.yes:
+                if not sys.stdin.isatty():
+                    print("error: not a terminal; pass --yes to confirm deletion",
+                          file=sys.stderr)
+                    return 2
+                if not _confirm(len(candidates), total, directory):
+                    audit_log.info("SUMMARY Aborted by user")
+                    if not args.quiet:
+                        print("Aborted. Nothing was deleted.")
+                    return 0
+
+            result: PurgeResult = delete_files(candidates)
+            audit_log.info(
+                "SUMMARY Deleted %d file(s), freed %d bytes (failed: %d)",
+                result.deleted,
+                result.freed_bytes,
+                len(result.failures),
+            )
+        except KeyboardInterrupt:
+            audit_log.info("SUMMARY Interrupted")
+            print("\nInterrupted.", file=sys.stderr)
+            return 130
+
+        if not args.quiet:
+            print(f"Deleted {result.deleted} file(s), freed {format_size(result.freed_bytes)}.")
+        if result.failures:
+            print(f"{len(result.failures)} file(s) could not be deleted:", file=sys.stderr)
+            for path, exc in result.failures:
+                print(f"  {path}: {exc.strerror}", file=sys.stderr)
+            return 1
+        return 0
+    finally:
+        if handler is not None:
+            handler.close()
+            audit_log.removeHandler(handler)
 
 
 if __name__ == "__main__":  # pragma: no cover
