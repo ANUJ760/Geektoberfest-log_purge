@@ -107,3 +107,32 @@ def test_quiet_mode_deletion_failures_printed_to_stderr(tmp_path, capsys, monkey
     assert "could not be deleted" in captured.err
 
 
+def test_exclude_protects_files(tmp_path):
+    log_file = make_old(tmp_path / "a.log")
+    keep_file = make_old(tmp_path / "a.keep")
+    assert cli.main([str(tmp_path), "-d", "30", "--yes", "--exclude", "*.keep"]) == 0
+    assert not log_file.exists()
+    assert keep_file.exists()
+
+
+def test_exclude_short_flag(tmp_path):
+    log_file = make_old(tmp_path / "a.log")
+    keep_file = make_old(tmp_path / "a.keep")
+    assert cli.main([str(tmp_path), "-d", "30", "--yes", "-e", "*.keep"]) == 0
+    assert not log_file.exists()
+    assert keep_file.exists()
+
+
+def test_multiple_excludes(tmp_path):
+    log_file = make_old(tmp_path / "a.log")
+    keep_file = make_old(tmp_path / "a.keep")
+    bak_file = make_old(tmp_path / "a.bak")
+    assert cli.main([
+        str(tmp_path), "-d", "30", "--yes",
+        "-e", "*.keep", "-e", "*.bak"
+    ]) == 0
+    assert not log_file.exists()
+    assert keep_file.exists()
+    assert bak_file.exists()
+
+

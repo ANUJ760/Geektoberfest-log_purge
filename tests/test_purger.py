@@ -72,3 +72,21 @@ def test_invalid_inputs(tmp_path):
         find_old_files(tmp_path, -1)
     with pytest.raises(NotADirectoryError):
         find_old_files(tmp_path / "missing", 1)
+
+
+def test_exclude_filter(tmp_path):
+    log_file = make_file(tmp_path / "app.log", 40)
+    keep_file = make_file(tmp_path / "app.keep", 40)
+    bak_file = make_file(tmp_path / "app.bak", 40)
+
+    # single string exclude
+    assert [c.path for c in find_old_files(tmp_path, 30, exclude="*.keep")] == [bak_file, log_file]
+
+    # list exclude
+    assert [c.path for c in find_old_files(tmp_path, 30, exclude=["*.keep", "*.bak"])] == [log_file]
+
+    # recursive exclude
+    nested_keep = make_file(tmp_path / "sub" / "nested.keep", 40)
+    assert keep_file not in [c.path for c in find_old_files(tmp_path, 30, exclude="*.keep")]
+    assert nested_keep not in [c.path for c in find_old_files(tmp_path, 30, exclude="*.keep")]
+
