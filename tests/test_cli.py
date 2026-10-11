@@ -93,3 +93,17 @@ def test_quiet_mode_errors_still_printed(tmp_path, capsys):
     captured = capsys.readouterr()
     assert "error: not a directory" in captured.err
 
+
+def test_quiet_mode_deletion_failures_printed_to_stderr(tmp_path, capsys, monkeypatch):
+    make_old(tmp_path / "a.log")
+
+    def fake_unlink(self):
+        raise PermissionError("Permission denied")
+
+    monkeypatch.setattr("pathlib.Path.unlink", fake_unlink)
+    assert cli.main([str(tmp_path), "-d", "30", "--yes", "-q"]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "could not be deleted" in captured.err
+
+
