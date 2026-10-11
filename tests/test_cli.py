@@ -107,3 +107,36 @@ def test_quiet_mode_deletion_failures_printed_to_stderr(tmp_path, capsys, monkey
     assert "could not be deleted" in captured.err
 
 
+def test_cli_duration_units(tmp_path):
+    # Test hours: 15 hours old vs 8 hours old
+    old_file = tmp_path / "old.log"
+    old_file.write_text("old")
+    t_old = time.time() - 15 * 3600
+    os.utime(old_file, (t_old, t_old))
+
+    recent_file = tmp_path / "recent.log"
+    recent_file.write_text("recent")
+    t_recent = time.time() - 8 * 3600
+    os.utime(recent_file, (t_recent, t_recent))
+
+    assert cli.main([str(tmp_path), "-d", "12h", "--yes"]) == 0
+    assert not old_file.exists()
+    assert recent_file.exists()
+
+
+def test_cli_duration_weeks_and_age_alias(tmp_path):
+    f = make_old(tmp_path / "a.log", age_days=20)
+    assert cli.main([str(tmp_path), "--age", "2w", "--yes"]) == 0
+    assert not f.exists()
+
+
+def test_cli_invalid_duration_exit_code_2(tmp_path, capsys):
+    assert cli.main([str(tmp_path), "-d", "invalid"]) == 2
+    captured = capsys.readouterr()
+    assert "error: invalid age/days" in captured.err
+
+    assert cli.main([str(tmp_path), "-d", "-5d"]) == 2
+    captured = capsys.readouterr()
+    assert "error: invalid age/days" in captured.err
+
+

@@ -72,3 +72,23 @@ def test_invalid_inputs(tmp_path):
         find_old_files(tmp_path, -1)
     with pytest.raises(NotADirectoryError):
         find_old_files(tmp_path / "missing", 1)
+
+
+def test_parse_duration():
+    from log_purge.utils import parse_duration
+
+    assert parse_duration(30) == 30.0
+    assert parse_duration("30") == 30.0
+    assert parse_duration("30d") == 30.0
+    assert parse_duration("30 days") == 30.0
+    assert parse_duration("12h") == 0.5
+    assert parse_duration("12 hours") == 0.5
+    assert parse_duration("2w") == 14.0
+    assert parse_duration("2 weeks") == 14.0
+    assert parse_duration("60m") == pytest.approx(60 / 1440)
+    assert parse_duration("0") == 0.0
+
+    for invalid in ("", "   ", "xyz", "-5d", "12x", None):
+        with pytest.raises(ValueError):
+            parse_duration(invalid)
+

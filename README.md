@@ -31,11 +31,15 @@ log-purge /logs --days 30 --yes
 
 # Only *.log files, top-level directory only
 log-purge /logs -d 14 -p "*.log" --no-recursive --yes
+
+# Using duration units like hours or weeks (or --age)
+log-purge /logs -d 12h --yes
+log-purge /logs --age 2w --yes
 ```
 
 | Option | Meaning |
 |---|---|
-| `-d, --days N` | Delete files older than N days (required) |
+| `-d, --days, --age AGE` | Delete files older than AGE (e.g. `30`, `30d`, `12h`, `2w`) (required) |
 | `-p, --pattern GLOB` | Match file names, default `*` |
 | `--no-recursive` | Don't descend into subdirectories |
 | `-n, --dry-run` | List what would be deleted, delete nothing |

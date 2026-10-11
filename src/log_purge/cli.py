@@ -17,7 +17,7 @@ from pathlib import Path
 
 from . import __version__
 from .purger import PurgeResult, delete_files, find_old_files
-from .utils import age_in_days, format_size
+from .utils import age_in_days, format_size, parse_duration
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -26,8 +26,8 @@ def build_parser() -> argparse.ArgumentParser:
         description="Delete files older than N days from a directory.",
     )
     p.add_argument("directory", type=Path, help="directory to clean (e.g. /logs)")
-    p.add_argument("-d", "--days", type=float, required=True,
-                   help="delete files older than this many days")
+    p.add_argument("-d", "--days", "--age", dest="days", type=str, required=True,
+                   help="delete files older than this age (e.g. 30, 30d, 12h, 2w)")
     p.add_argument("-p", "--pattern", default="*",
                    help="glob matched against file names (default: *)")
     p.add_argument("--no-recursive", action="store_true",
@@ -64,7 +64,13 @@ def main(argv: list[str] | None = None) -> int:
         force=True,
     )
 
-    if args.days < 0:
+    try:
+        days = parse_duration(args.days)
+    except ValueError as exc:
+        print(f"error: invalid age/days: {exc}", file=sys.stderr)
+        return 2
+
+    if days < 0:
         print("error: --days must be >= 0", file=sys.stderr)
         return 2
     directory = args.directory.resolve()
@@ -78,12 +84,12 @@ def main(argv: list[str] | None = None) -> int:
     try:
         now = time.time()
         candidates = find_old_files(
-            directory, args.days, args.pattern,
+            directory, days, args.pattern,
             recursive=not args.no_recursive, now=now,
         )
         if not candidates:
             if not args.quiet:
-                print(f"Nothing to delete: no files older than {args.days:g} day(s).")
+                print(f"Nothing to delete: no files older than {args.days}.")
             return 0
 
         total = sum(c.size for c in candidates)

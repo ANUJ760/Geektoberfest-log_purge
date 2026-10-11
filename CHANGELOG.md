@@ -8,6 +8,7 @@ All notable changes are documented here. Format based on
 
 ### Added
 - `--quiet` (`-q`) flag to suppress all output except errors for cron and automated scripts (#5).
+- Support for duration units in `--days` and added `--age` alias (e.g. `12h`, `2w`, `30d`) with `parse_duration` helper (#3).
 
 ## [0.1.0] - 2026-10-04
 
