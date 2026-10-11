@@ -41,6 +41,7 @@ log-purge /logs -d 14 -p "*.log" --no-recursive --yes
 | `-n, --dry-run` | List what would be deleted, delete nothing |
 | `-y, --yes` | Skip the confirmation prompt |
 | `-v, --verbose` | Print every file handled |
+| `-q, --quiet` | Print nothing except errors |
 
 Cron example (daily at 02:00):
 

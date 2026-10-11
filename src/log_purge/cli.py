@@ -38,6 +38,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="skip the confirmation prompt (for cron / scripts)")
     p.add_argument("-v", "--verbose", action="store_true",
                    help="list every file as it is handled")
+    p.add_argument("-q", "--quiet", action="store_true",
+                   help="print nothing except errors")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return p
 
@@ -51,9 +53,15 @@ def _confirm(count: int, total: int, directory: Path) -> bool:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    log_level = logging.WARNING
+    if args.verbose:
+        log_level = logging.DEBUG
+    elif args.quiet:
+        log_level = logging.ERROR
     logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.WARNING,
+        level=log_level,
         format="%(levelname)s: %(message)s",
+        force=True,
     )
 
     if args.days < 0:
@@ -74,18 +82,20 @@ def main(argv: list[str] | None = None) -> int:
             recursive=not args.no_recursive, now=now,
         )
         if not candidates:
-            print(f"Nothing to delete: no files older than {args.days:g} day(s).")
+            if not args.quiet:
+                print(f"Nothing to delete: no files older than {args.days:g} day(s).")
             return 0
 
         total = sum(c.size for c in candidates)
-        if args.verbose or args.dry_run:
+        if (args.verbose or args.dry_run) and not args.quiet:
             for c in candidates:
                 print(f"  {c.path}  ({format_size(c.size)}, "
                       f"{age_in_days(c.mtime, now):.0f} days old)")
 
         if args.dry_run:
-            print(f"[dry-run] Would delete {len(candidates)} file(s), "
-                  f"freeing {format_size(total)}.")
+            if not args.quiet:
+                print(f"[dry-run] Would delete {len(candidates)} file(s), "
+                      f"freeing {format_size(total)}.")
             return 0
 
         if not args.yes:
@@ -94,7 +104,8 @@ def main(argv: list[str] | None = None) -> int:
                       file=sys.stderr)
                 return 2
             if not _confirm(len(candidates), total, directory):
-                print("Aborted. Nothing was deleted.")
+                if not args.quiet:
+                    print("Aborted. Nothing was deleted.")
                 return 0
 
         result: PurgeResult = delete_files(candidates)
@@ -102,7 +113,8 @@ def main(argv: list[str] | None = None) -> int:
         print("\nInterrupted.", file=sys.stderr)
         return 130
 
-    print(f"Deleted {result.deleted} file(s), freed {format_size(result.freed_bytes)}.")
+    if not args.quiet:
+        print(f"Deleted {result.deleted} file(s), freed {format_size(result.freed_bytes)}.")
     if result.failures:
         print(f"{len(result.failures)} file(s) could not be deleted:", file=sys.stderr)
         for path, exc in result.failures:
