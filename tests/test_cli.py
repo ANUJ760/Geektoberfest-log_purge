@@ -52,3 +52,58 @@ def test_non_interactive_without_yes_is_refused(tmp_path, monkeypatch):
 def test_bad_directory_and_root(tmp_path):
     assert cli.main([str(tmp_path / "nope"), "-d", "1"]) == 2
     assert cli.main([os.path.abspath(os.sep), "-d", "1", "--yes"]) == 2
+
+
+def test_quiet_mode_deletes_silently(tmp_path, capsys):
+    f = make_old(tmp_path / "a.log")
+    assert cli.main([str(tmp_path), "-d", "30", "--yes", "--quiet"]) == 0
+    assert not f.exists()
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_quiet_mode_short_flag(tmp_path, capsys):
+    f = make_old(tmp_path / "a.log")
+    assert cli.main([str(tmp_path), "-d", "30", "--yes", "-q"]) == 0
+    assert not f.exists()
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_quiet_mode_dry_run(tmp_path, capsys):
+    f = make_old(tmp_path / "a.log")
+    assert cli.main([str(tmp_path), "-d", "30", "--dry-run", "-q"]) == 0
+    assert f.exists()
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_quiet_mode_nothing_to_delete(tmp_path, capsys):
+    assert cli.main([str(tmp_path), "-d", "30", "-q"]) == 0
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_quiet_mode_errors_still_printed(tmp_path, capsys):
+    assert cli.main([str(tmp_path / "nope"), "-d", "1", "-q"]) == 2
+    captured = capsys.readouterr()
+    assert "error: not a directory" in captured.err
+
+
+def test_quiet_mode_deletion_failures_printed_to_stderr(tmp_path, capsys, monkeypatch):
+    make_old(tmp_path / "a.log")
+
+    def fake_unlink(self):
+        raise PermissionError("Permission denied")
+
+    monkeypatch.setattr("pathlib.Path.unlink", fake_unlink)
+    assert cli.main([str(tmp_path), "-d", "30", "--yes", "-q"]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "could not be deleted" in captured.err
+
+
